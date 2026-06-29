@@ -1,0 +1,25 @@
+Flask==3.1.3
+numpy==1.26.4
+opencv-python==4.11.0.86
+Pillow==10.4.0
+scipy==1.13.1
+ultralytics==8.4.71
+lap==0.5.13
+PyYAML==6.0.2
+tqdm==4.67.1
+matplotlib==3.10.9
+pandas==2.2.2
+psutil==7.0.0
+
+# Optional but commonly required by Ultralytics
+torch
+torchvision
+
+# If your project uses OCR
+pytesseract
+
+# If your project uses PostgreSQL
+psycopg2-binary
+
+# If your project uses SQLAlchemy
+SQLAlchemy
