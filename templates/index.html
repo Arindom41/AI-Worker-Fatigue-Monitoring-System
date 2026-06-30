@@ -6,25 +6,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Worker Fatigue Monitoring System</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 
 <body>
     <header class="app-header">
-        <div class="container-fluid px-4">
-            <div class="d-flex flex-wrap align-items-center justify-content-between gap-3">
+        <div class="container-fluid px-4 header-inner">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-4">
                 <div>
-                    <h1>AI Worker Fatigue Monitoring System</h1>
-                    <p class="mb-0">Real-time ergonomic risk and fatigue monitoring</p>
+                    <span class="eyebrow"><span class="dot"></span> Computer Vision &middot; YOLOv8 Pose &middot; REBA / RULA</span>
+                    <h1>AI Worker Fatigue &amp; Ergonomic Risk Assessment</h1>
+                    <p>Upload recorded footage or switch to a live camera feed to monitor posture, ergonomic risk and fatigue in real time.</p>
                 </div>
 
-                <div class="d-flex flex-wrap gap-2">
+                <div class="header-actions">
                     <form action="/upload" method="POST" enctype="multipart/form-data" class="upload-form">
-                        <input class="form-control form-control-sm" type="file" name="video" required>
-                        <button class="btn btn-primary btn-sm" type="submit">Upload Video</button>
+                        <label for="video-upload-input"><i class="bi bi-upload"></i></label>
+                        <input id="video-upload-input" class="form-control form-control-sm" type="file" name="video" required aria-label="Select a video file to upload">
+                        <button class="btn btn-primary btn-sm" type="submit"><i class="bi bi-cloud-arrow-up"></i> Upload Video</button>
                     </form>
-                    <a class="btn btn-outline-light btn-sm" href="/live">Live Camera</a>
+                    <a class="btn btn-outline-light btn-sm" href="/live"><i class="bi bi-camera-video"></i> Start Live Monitoring</a>
                 </div>
+            </div>
+
+            <div class="feature-strip" aria-label="Detection capabilities">
+                <div class="feature-chip"><i class="bi bi-person-bounding-box"></i><span>Real-Time Detection</span></div>
+                <div class="feature-chip"><i class="bi bi-bounding-box-circles"></i><span>YOLOv8 Pose</span></div>
+                <div class="feature-chip"><i class="bi bi-clipboard2-pulse"></i><span>REBA Analysis</span></div>
+                <div class="feature-chip"><i class="bi bi-clipboard2-data"></i><span>RULA Analysis</span></div>
+                <div class="feature-chip"><i class="bi bi-battery-half"></i><span>Fatigue Monitoring</span></div>
+                <div class="feature-chip"><i class="bi bi-graph-up-arrow"></i><span>Risk Prediction</span></div>
             </div>
         </div>
     </header>
@@ -34,7 +46,7 @@
             <div class="panel video-panel">
                 <div class="panel-header">
                     <div>
-                        <h2>Live Video Stream</h2>
+                        <h2><i class="bi bi-camera-reels"></i> Live Video Stream</h2>
                         <span>Worker ID, REBA score, and risk level overlay</span>
                     </div>
                     <div class="stream-controls">
@@ -51,9 +63,13 @@
 
                 <div class="video-frame">
                     {% if uploaded %}
+                        <span class="corner-bl"></span><span class="corner-br"></span>
+                        <span class="scan-line"></span>
+                        <span class="rec-badge"><span class="rec-dot"></span>REC</span>
                         <img id="stream-image" src="/video_feed" alt="Live worker fatigue detection stream">
                     {% else %}
                         <div class="empty-video">
+                            <i class="bi bi-film"></i>
                             <strong>No video selected</strong>
                             <span>Upload a video to start monitoring.</span>
                         </div>
@@ -64,67 +80,107 @@
             <aside class="panel alerts-panel">
                 <div class="panel-header">
                     <div>
-                        <h2>Active Alerts</h2>
+                        <h2><i class="bi bi-bell"></i> Active Alerts</h2>
                         <span>Workers requiring immediate action</span>
                     </div>
                 </div>
                 <div id="alerts-panel" class="alerts-list">
-                    <div class="empty-alert">No Active Alerts</div>
+                    <div class="empty-alert"><i class="bi bi-shield-check"></i>No Active Alerts</div>
                 </div>
             </aside>
         </section>
 
         <section class="summary-grid" aria-label="System summary cards">
             <div class="metric-card">
-                <span>Total Workers</span>
+                <div class="metric-top"><span>Total Workers</span><i class="bi bi-people"></i></div>
                 <strong id="total-workers">0</strong>
             </div>
             <div class="metric-card safe">
-                <span>Safe Workers</span>
+                <div class="metric-top"><span>Safe Workers</span><i class="bi bi-shield-check"></i></div>
                 <strong id="safe-workers">0</strong>
             </div>
             <div class="metric-card monitoring">
-                <span>Monitoring Workers</span>
+                <div class="metric-top"><span>Monitoring Workers</span><i class="bi bi-eye"></i></div>
                 <strong id="monitoring-workers">0</strong>
             </div>
             <div class="metric-card warning">
-                <span>Warning Workers</span>
+                <div class="metric-top"><span>Warning Workers</span><i class="bi bi-exclamation-triangle"></i></div>
                 <strong id="warning-workers">0</strong>
             </div>
             <div class="metric-card alert">
-                <span>Alert Workers</span>
+                <div class="metric-top"><span>Alert Workers</span><i class="bi bi-exclamation-octagon"></i></div>
                 <strong id="alert-workers">0</strong>
             </div>
             <div class="metric-card">
-                <span>Highest REBA Score</span>
+                <div class="metric-top"><span>Highest REBA Score</span><i class="bi bi-graph-up-arrow"></i></div>
                 <strong id="highest-reba">0</strong>
             </div>
             <div class="metric-card">
-                <span>Average REBA Score</span>
+                <div class="metric-top"><span>Average REBA Score</span><i class="bi bi-bar-chart-line"></i></div>
                 <strong id="average-reba">0.0</strong>
             </div>
             <div class="metric-card accuracy">
-                <span>System Accuracy</span>
+                <div class="metric-top"><span>System Accuracy</span><i class="bi bi-cpu"></i></div>
                 <strong id="system-accuracy">--</strong>
+            </div>
+        </section>
+
+        <section class="analytics-grid" aria-label="Analytics">
+            <div class="panel chart-panel">
+                <div class="panel-header">
+                    <div>
+                        <h2><i class="bi bi-pie-chart"></i> Risk Distribution</h2>
+                        <span>Live worker breakdown by risk level</span>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="chart-canvas-wrap">
+                        <canvas id="risk-distribution-chart" role="img" aria-label="Risk distribution donut chart"></canvas>
+                    </div>
+                    <div class="chart-legend">
+                        <span><i style="background:var(--success)"></i>Safe</span>
+                        <span><i style="background:var(--accent)"></i>Monitoring</span>
+                        <span><i style="background:var(--warning)"></i>Warning</span>
+                        <span><i style="background:var(--danger)"></i>Alert</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel chart-panel">
+                <div class="panel-header">
+                    <div>
+                        <h2><i class="bi bi-activity"></i> Fatigue / REBA Trend</h2>
+                        <span>Average vs. highest REBA score, this session</span>
+                    </div>
+                </div>
+                <div class="panel-body">
+                    <div class="chart-canvas-wrap">
+                        <canvas id="reba-trend-chart" role="img" aria-label="REBA trend line chart"></canvas>
+                    </div>
+                    <div class="chart-legend">
+                        <span><i style="background:var(--primary)"></i>Average REBA</span>
+                        <span><i style="background:var(--danger)"></i>Highest REBA</span>
+                    </div>
+                </div>
             </div>
         </section>
 
         <section class="panel table-panel">
             <div class="panel-header">
                 <div>
-                    <h2>Live Worker Table</h2>
+                    <h2><i class="bi bi-table"></i> Live Worker Table</h2>
                     <span>Updated every second from existing worker data</span>
                 </div>
                 <button class="btn btn-outline-danger btn-sm" type="button" id="clear-workers-btn">
-                    Clear Workers
+                    <i class="bi bi-trash3"></i> Clear Workers
                 </button>
             </div>
 
-            <div class="table-responsive">
+            <div class="table-scroll">
                 <table class="table dashboard-table align-middle mb-0">
                     <thead>
                         <tr>
-                            <th>Worker ID</th>
+                            <th>Worker</th>
                             <th>Back Angle</th>
                             <th>Neck Angle</th>
                             <th>Knee Angle</th>
@@ -149,6 +205,11 @@
         </section>
     </main>
 
+    <footer class="app-footer">
+        AI Worker Fatigue &amp; Ergonomic Risk Assessment &middot; YOLOv8 Pose Estimation &middot; REBA / RULA Scoring
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 
