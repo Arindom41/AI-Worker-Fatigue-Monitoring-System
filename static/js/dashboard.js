@@ -1,4 +1,6 @@
 const previousReba = new Map();
+const rebaHistory = []; // session-only trend data, derived purely from live /worker_status polls
+const MAX_HISTORY_POINTS = 24;
 
 const summaryIds = {
     total: "total-workers",
@@ -10,6 +12,9 @@ const summaryIds = {
     average: "average-reba",
     accuracy: "system-accuracy",
 };
+
+let riskChart = null;
+let trendChart = null;
 
 function numberValue(value, digits = 1) {
     if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -56,22 +61,34 @@ function trendFor(worker) {
     previousReba.set(worker.id, current);
 
     if (previous === undefined || current === previous) {
-        return { label: "→ Stable", className: "trend-flat" };
+        return { label: "Stable", icon: "bi-dash-lg", className: "trend-flat" };
     }
 
     if (current > previous) {
-        return { label: "↑ Increasing", className: "trend-up" };
+        return { label: "Rising", icon: "bi-arrow-up-short", className: "trend-up" };
     }
 
-    return { label: "↓ Improving", className: "trend-down" };
+    return { label: "Improving", icon: "bi-arrow-down-short", className: "trend-down" };
 }
 
 function setText(id, value) {
     const element = document.getElementById(id);
 
-    if (element) {
-        element.textContent = value;
+    if (!element) {
+        return;
     }
+
+    if (element.textContent !== String(value)) {
+        element.textContent = value;
+        element.classList.remove("flash");
+        // restart flash animation on change
+        void element.offsetWidth;
+        element.classList.add("flash");
+    }
+}
+
+function avatarInitial(workerId) {
+    return `W${workerId}`;
 }
 
 function updateSummary(workers) {
@@ -119,6 +136,8 @@ function updateSummary(workers) {
     setText(summaryIds.highest, highest);
     setText(summaryIds.average, workers.length ? (totalReba / workers.length).toFixed(1) : "0.0");
     setText(summaryIds.accuracy, accuracyCount ? `${(totalAccuracy / accuracyCount).toFixed(1)}%` : "--");
+
+    return { counts, highest, average: workers.length ? totalReba / workers.length : 0 };
 }
 
 function renderTable(workers) {
@@ -143,19 +162,24 @@ function renderTable(workers) {
 
             return `
                 <tr class="row-${risk}">
-                    <td><strong>${worker.id}</strong></td>
-                    <td>${numberValue(worker.back)}</td>
-                    <td>${numberValue(worker.neck)}</td>
-                    <td>${numberValue(worker.knee)}</td>
-                    <td>${numberValue(worker.lua)}</td>
-                    <td>${numberValue(worker.rua)}</td>
-                    <td>${numberValue(worker.lla)}</td>
-                    <td>${numberValue(worker.rla)}</td>
-                    <td><strong>${worker.reba || 0}</strong></td>
+                    <td>
+                        <div class="worker-id-cell">
+                            <span class="worker-avatar" aria-hidden="true">${avatarInitial(worker.id)}</span>
+                            <strong>Worker ${worker.id}</strong>
+                        </div>
+                    </td>
+                    <td class="mono">${numberValue(worker.back)}&deg;</td>
+                    <td class="mono">${numberValue(worker.neck)}&deg;</td>
+                    <td class="mono">${numberValue(worker.knee)}&deg;</td>
+                    <td class="mono">${numberValue(worker.lua)}&deg;</td>
+                    <td class="mono">${numberValue(worker.rua)}&deg;</td>
+                    <td class="mono">${numberValue(worker.lla)}&deg;</td>
+                    <td class="mono">${numberValue(worker.rla)}&deg;</td>
+                    <td class="mono"><strong>${worker.reba || 0}</strong></td>
                     <td><span class="risk-badge risk-${risk}">${worker.risk || "SAFE"}</span></td>
-                    <td>${numberValue(worker.unsafe_time)} s</td>
+                    <td class="mono">${numberValue(worker.unsafe_time)}s</td>
                     <td><span class="status-badge status-${statusKey}">${worker.status || "SAFE"}</span></td>
-                    <td><span class="trend ${trend.className}">${trend.label}</span></td>
+                    <td><span class="trend ${trend.className}"><i class="bi ${trend.icon}"></i>${trend.label}</span></td>
                 </tr>
             `;
         })
@@ -182,14 +206,14 @@ function renderAlerts(workers) {
     const alerts = workers.filter((worker) => String(worker.status || "").toUpperCase() === "ALERT");
 
     if (!alerts.length) {
-        panel.innerHTML = '<div class="empty-alert">No Active Alerts</div>';
+        panel.innerHTML = '<div class="empty-alert"><i class="bi bi-shield-check"></i>No Active Alerts</div>';
         return;
     }
 
     panel.innerHTML = alerts
         .map((worker) => `
             <article class="alert-item">
-                <h3>Worker ID ${worker.id}</h3>
+                <h3><i class="bi bi-exclamation-octagon-fill"></i>Worker ID ${worker.id}</h3>
                 <p><strong>REBA Score:</strong> ${worker.reba || 0}</p>
                 <p><strong>Unsafe Time:</strong> ${numberValue(worker.unsafe_time)} s</p>
                 <p><strong>Status:</strong> ${worker.status}</p>
@@ -197,6 +221,161 @@ function renderAlerts(workers) {
             </article>
         `)
         .join("");
+}
+
+/* ==========================================================================
+   Analytics charts — built entirely from data already returned by
+   /worker_status. No backend changes, no fabricated figures.
+   ========================================================================== */
+
+function getCssVar(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+function buildRiskChart(counts) {
+    const canvas = document.getElementById("risk-distribution-chart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const data = [counts.safe, counts.monitoring, counts.warning, counts.alert];
+    const colors = [getCssVar("--success"), getCssVar("--accent"), getCssVar("--warning"), getCssVar("--danger")];
+
+    if (riskChart) {
+        riskChart.data.datasets[0].data = data;
+        riskChart.update();
+        return;
+    }
+
+    riskChart = new Chart(canvas.getContext("2d"), {
+        type: "doughnut",
+        data: {
+            labels: ["Safe", "Monitoring", "Warning", "Alert"],
+            datasets: [{
+                data,
+                backgroundColor: colors,
+                borderColor: "rgba(11,18,32,0.9)",
+                borderWidth: 3,
+                hoverOffset: 6,
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: "68%",
+            animation: { animateRotate: true, duration: 700 },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: "#121826",
+                    borderColor: "rgba(255,255,255,0.08)",
+                    borderWidth: 1,
+                    titleColor: "#F8FAFC",
+                    bodyColor: "#94A3B8",
+                },
+            },
+        },
+    });
+}
+
+function buildTrendChart() {
+    const canvas = document.getElementById("reba-trend-chart");
+
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+
+    const labels = rebaHistory.map((point) => point.label);
+    const avgData = rebaHistory.map((point) => point.average);
+    const highData = rebaHistory.map((point) => point.highest);
+
+    if (trendChart) {
+        trendChart.data.labels = labels;
+        trendChart.data.datasets[0].data = avgData;
+        trendChart.data.datasets[1].data = highData;
+        trendChart.update("none");
+        return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    const accentGradient = ctx.createLinearGradient(0, 0, 0, 220);
+    accentGradient.addColorStop(0, "rgba(37, 99, 235, 0.35)");
+    accentGradient.addColorStop(1, "rgba(37, 99, 235, 0)");
+
+    trendChart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [
+                {
+                    label: "Average REBA",
+                    data: avgData,
+                    borderColor: getCssVar("--primary"),
+                    backgroundColor: accentGradient,
+                    fill: true,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                },
+                {
+                    label: "Highest REBA",
+                    data: highData,
+                    borderColor: getCssVar("--danger"),
+                    backgroundColor: "transparent",
+                    fill: false,
+                    tension: 0.35,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    borderWidth: 2,
+                    borderDash: [4, 4],
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 400 },
+            interaction: { mode: "index", intersect: false },
+            scales: {
+                x: {
+                    ticks: { color: "#94A3B8", font: { family: "JetBrains Mono", size: 10 }, maxRotation: 0 },
+                    grid: { color: "rgba(255,255,255,0.05)" },
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { color: "#94A3B8", font: { family: "JetBrains Mono", size: 10 } },
+                    grid: { color: "rgba(255,255,255,0.05)" },
+                },
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: "#121826",
+                    borderColor: "rgba(255,255,255,0.08)",
+                    borderWidth: 1,
+                    titleColor: "#F8FAFC",
+                    bodyColor: "#94A3B8",
+                },
+            },
+        },
+    });
+}
+
+function updateCharts(workers, summary) {
+    buildRiskChart(summary.counts);
+
+    const now = new Date();
+    const label = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    rebaHistory.push({ label, average: Number(summary.average.toFixed(1)), highest: summary.highest });
+
+    if (rebaHistory.length > MAX_HISTORY_POINTS) {
+        rebaHistory.shift();
+    }
+
+    buildTrendChart();
 }
 
 async function refreshDashboard() {
@@ -209,9 +388,10 @@ async function refreshDashboard() {
 
         const workers = await response.json();
 
-        updateSummary(workers);
+        const summary = updateSummary(workers);
         renderTable(workers);
         renderAlerts(workers);
+        updateCharts(workers, summary);
     } catch (error) {
         console.error(error);
     }
@@ -236,15 +416,17 @@ async function clearWorkers() {
         }
 
         previousReba.clear();
-        updateSummary([]);
+        rebaHistory.length = 0;
+        const summary = updateSummary([]);
         renderTable([]);
         renderAlerts([]);
+        updateCharts([], summary);
     } catch (error) {
         console.error(error);
     } finally {
         if (button) {
             button.disabled = false;
-            button.textContent = "Clear Workers";
+            button.innerHTML = '<i class="bi bi-trash3"></i> Clear Workers';
         }
     }
 }
@@ -266,6 +448,7 @@ function showStoppedStream() {
     if (videoFrame) {
         videoFrame.innerHTML = `
             <div class="empty-video">
+                <i class="bi bi-camera-video-off"></i>
                 <strong>Stream stopped</strong>
                 <span>Start a new stream to resume monitoring.</span>
             </div>
@@ -301,6 +484,19 @@ async function stopStream() {
         }
     }
 }
+
+/* Lightweight ripple position tracking for .btn (pure CSS handles the effect) */
+document.addEventListener("click", (event) => {
+    const button = event.target.closest(".btn");
+
+    if (!button) {
+        return;
+    }
+
+    const rect = button.getBoundingClientRect();
+    button.style.setProperty("--rx", `${event.clientX - rect.left}px`);
+    button.style.setProperty("--ry", `${event.clientY - rect.top}px`);
+});
 
 const clearButton = document.getElementById("clear-workers-btn");
 const stopButton = document.getElementById("stop-stream-btn");
